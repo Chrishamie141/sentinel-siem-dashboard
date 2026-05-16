@@ -64,19 +64,6 @@ Filter telemetry by:
 
 ---
 
-# Dashboard Preview
-
-## Main SOC Dashboard
-<img width="100%" alt="Sentinel SIEM Dashboard" src="./screenshots/dashboard-main.png">
-
-## Live Telemetry Feed
-<img width="100%" alt="Telemetry Feed" src="./screenshots/live-feed.png">
-
-## MITRE ATT&CK Correlation
-<img width="100%" alt="MITRE ATT&CK Mapping" src="./screenshots/mitre-panel.png">
-
----
-
 # Architecture Overview
 
 ```text
