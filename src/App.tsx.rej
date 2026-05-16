@@ -1,0 +1,164 @@
+diff a/src/App.tsx b/src/App.tsx	(rejected hunks)
+@@ -1,103 +1,93 @@
+ import { useMemo, useState } from 'react'
+ import logsData from './data/securityLogs.json'
+ import type { SecurityLog } from './types'
+ import KpiCards from './components/KpiCards'
+ import ChartsSection from './components/ChartsSection'
+ import TablesSection from './components/TablesSection'
+ import IntelPanels from './components/IntelPanels'
+ import RawLogViewer from './components/RawLogViewer'
+ import AlertQueue from './components/AlertQueue'
+ import { generateDetections } from './utils/detections'
++import { useLiveTelemetry } from './hooks/useLiveTelemetry'
+ 
+ const logs = logsData as SecurityLog[]
+ 
+ export default function App() {
+   const [severity, setSeverity] = useState('all')
+   const [eventType, setEventType] = useState('all')
++  const [ipFilter, setIpFilter] = useState('')
++  const [userFilter, setUserFilter] = useState('')
++  const [hostFilter, setHostFilter] = useState('')
++  const [tacticFilter, setTacticFilter] = useState('all')
+ 
+-  const filtered = useMemo(
+-    () =>
+-      logs.filter(
+-        (l) =>
+-          (severity === 'all' || l.severity === severity) &&
+-          (eventType === 'all' || l.event_type === eventType)
+-      ),
+-    [severity, eventType]
+-  )
+-
++  const stream = useLiveTelemetry(logs)
+   const eventTypes = Array.from(new Set(logs.map((l) => l.event_type)))
++  const tactics = Array.from(new Set(logs.map((l) => l.tactic)))
+ 
+-  const detections = useMemo(
+-    () => generateDetections(filtered),
+-    [filtered]
+-  )
++  const filtered = useMemo(() => stream.events.filter((l) =>
++    (severity === 'all' || l.severity === severity) &&
++    (eventType === 'all' || l.event_type === eventType) &&
++    (tacticFilter === 'all' || l.tactic === tacticFilter) &&
++    (!ipFilter || l.source_ip.includes(ipFilter)) &&
++    (!userFilter || l.username.toLowerCase().includes(userFilter.toLowerCase())) &&
++    (!hostFilter || l.hostname.toLowerCase().includes(hostFilter.toLowerCase()))
++  ), [stream.events, severity, eventType, tacticFilter, ipFilter, userFilter, hostFilter])
++
++  const detections = useMemo(() => generateDetections(filtered), [filtered])
++  const campaign = useMemo(() => filtered.filter((l) => ['reconnaissance', 'port_scan', 'failed_login', 'successful_login', 'privilege_escalation', 'suspicious_powershell', 'dns_beacon', 'outbound_c2', 'data_exfiltration'].includes(l.event_type)), [filtered])
+ 
+   return (
+     <main className="min-h-screen bg-soc-bg text-soc-text p-4 md:p-6 space-y-5">
+       <header className="bg-soc-panel border border-soc-border rounded-lg p-5">
+-        <h1 className="text-3xl font-bold text-soc-accent">
+-          Sentinel SIEM Dashboard
+-        </h1>
+-
+-        <p className="text-soc-muted">
+-          Simulated SOC Lab • Last updated{' '}
+-          {new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC • Total alerts{' '}
+-          {detections.length}
+-        </p>
+-
+-        <p className="text-xs text-soc-muted mt-2">
+-          Telemetry and incidents are simulated for portfolio demonstration of
+-          SOC triage, detection engineering, and MITRE ATT&CK mapping workflows.
+-        </p>
++        <div className='flex flex-wrap items-center justify-between gap-3'>
++          <div>
++            <h1 className="text-3xl font-bold text-soc-accent">Sentinel SIEM Dashboard</h1>
++            <p className="text-soc-muted">Live SOC Telemetry Simulation • {new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC</p>
++          </div>
++          <div className='flex items-center gap-2'>
++            <span className={`h-2.5 w-2.5 rounded-full ${stream.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
++            <span className='text-xs text-soc-muted'>{stream.isRunning ? 'INGESTING' : 'PAUSED'}</span>
++          </div>
++        </div>
+       </header>
+ 
+-      <div className="flex flex-wrap gap-3">
+-        <select
+-          className="bg-soc-panel border border-soc-border px-3 py-2 rounded"
+-          value={severity}
+-          onChange={(e) => setSeverity(e.target.value)}
+-        >
+-          <option value="all">All Severities</option>
+-
+-          {['low', 'medium', 'high', 'critical'].map((s) => (
+-            <option key={s} value={s}>
+-              {s}
+-            </option>
+-          ))}
+-        </select>
+-
+-        <select
+-          className="bg-soc-panel border border-soc-border px-3 py-2 rounded"
+-          value={eventType}
+-          onChange={(e) => setEventType(e.target.value)}
+-        >
+-          <option value="all">All Event Types</option>
+-
+-          {eventTypes.map((e) => (
+-            <option key={e} value={e}>
+-              {e}
+-            </option>
+-          ))}
+-        </select>
++      <section className='bg-soc-panel border border-soc-border rounded-lg p-4 space-y-3'>
++        <div className='flex flex-wrap gap-2'>
++          <button className='px-3 py-1.5 rounded border border-soc-border hover:bg-white/5' onClick={() => stream.setIsRunning(true)}>▶ Play</button>
++          <button className='px-3 py-1.5 rounded border border-soc-border hover:bg-white/5' onClick={() => stream.setIsRunning(false)}>⏸ Pause</button>
++          <button className='px-3 py-1.5 rounded border border-soc-border hover:bg-white/5' onClick={stream.clear}>🧹 Clear Feed</button>
++          <select className='bg-soc-bg border border-soc-border px-2 rounded' value={stream.speed} onChange={(e) => stream.setSpeed(Number(e.target.value) as 1 | 2 | 4 | 8)}>
++            {[1, 2, 4, 8].map((n) => <option key={n} value={n}>{n}x speed</option>)}
++          </select>
++          <span className='text-xs text-soc-muted self-center'>Ingested {stream.cursor}/{stream.total} • Remaining {stream.remaining}</span>
++        </div>
++        <marquee className='text-xs text-soc-accent bg-black/20 rounded px-2 py-1'>
++          {filtered.slice(-8).map((l) => `${l.timestamp.slice(11, 19)} ${l.event_type} ${l.source_ip}→${l.hostname}`).join('  •  ')}
++        </marquee>
++      </section>
++
++      <div className="grid md:grid-cols-3 xl:grid-cols-6 gap-3">
++        {[{ v: severity, s: setSeverity, opts: ['all', 'low', 'medium', 'high', 'critical'], p: 'Severity' }, { v: eventType, s: setEventType, opts: ['all', ...eventTypes], p: 'Event type' }, { v: tacticFilter, s: setTacticFilter, opts: ['all', ...tactics], p: 'MITRE tactic' }].map((f, i) =>
++          <select key={i} className="bg-soc-panel border border-soc-border px-3 py-2 rounded" value={f.v} onChange={(e) => f.s(e.target.value)}>{f.opts.map((o) => <option key={o} value={o}>{o}</option>)}</select>
++        )}
++        <input placeholder='Filter IP' value={ipFilter} onChange={(e) => setIpFilter(e.target.value)} className='bg-soc-panel border border-soc-border px-3 py-2 rounded' />
++        <input placeholder='Filter user' value={userFilter} onChange={(e) => setUserFilter(e.target.value)} className='bg-soc-panel border border-soc-border px-3 py-2 rounded' />
++        <input placeholder='Filter host' value={hostFilter} onChange={(e) => setHostFilter(e.target.value)} className='bg-soc-panel border border-soc-border px-3 py-2 rounded' />
+       </div>
+ 
+       <KpiCards logs={filtered} />
+-
+       <AlertQueue detections={detections} />
++      <ChartsSection logs={filtered} detections={detections} />
+ 
+-      <ChartsSection
+-        logs={filtered}
+-        detections={detections}
+-      />
++      <section className='grid lg:grid-cols-3 gap-4'>
++        <div className='bg-soc-panel border border-soc-border rounded-lg p-4'><h3>Attack Timeline</h3><ol className='text-xs mt-2 space-y-1 max-h-56 overflow-auto'>{campaign.slice(-25).map((e, i) => <li key={`${e.timestamp}-${i}`}>{e.timestamp.slice(11, 19)} • {e.event_type} • {e.source_ip} • {e.hostname}</li>)}</ol></div>
++        <div className='bg-soc-panel border border-soc-border rounded-lg p-4'><h3>Active Incidents</h3><ul className='text-sm mt-2 space-y-1'>{detections.filter(d => d.status !== 'Resolved').slice(0, 8).map(d => <li key={d.id}><span className='text-soc-accent'>{d.title}</span> • {d.affected_ip ?? d.affected_host ?? '-'} </li>)}</ul></div>
++        <div className='bg-soc-panel border border-soc-border rounded-lg p-4'><h3>Top Active Threat Actors</h3><ul className='text-sm mt-2 space-y-1'>{Object.entries(filtered.reduce((a, l) => ((a[l.source_ip] = (a[l.source_ip] || 0) + 1), a), {} as Record<string, number>)).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([ip, c]) => <li key={ip}>{ip} • {c} events</li>)}</ul></div>
++      </section>
+ 
++      <IntelPanels logs={filtered} detections={detections} />
+       <TablesSection logs={filtered} />
+-
+-      <IntelPanels
+-        logs={filtered}
+-        detections={detections}
+-      />
+-
+       <RawLogViewer logs={filtered} />
+     </main>
+   )
+-}
+\ No newline at end of file
++}
